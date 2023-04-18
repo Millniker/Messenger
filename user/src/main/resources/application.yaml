@@ -5,4 +5,7 @@ spring:
     url: jdbc:postgresql://localhost:5432/postgres
     username: postgres
     password: 79521831146
-
+security:
+  jwt-token:
+    secret: ${JWT_SECRET:fdklvdlfvmkl3nl4jn3jnt433j53n5jn35j3jnnlfmr}
+    expiration-minutes: ${JWT_EXPIRATION:1221}

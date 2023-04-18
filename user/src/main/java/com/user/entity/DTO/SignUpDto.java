@@ -1,14 +1,12 @@
 package com.user.entity.DTO;
 
 import lombok.Data;
-import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 
 import java.time.LocalDate;
 import java.util.UUID;
 
 @RequiredArgsConstructor
-@NoArgsConstructor
 @Data
 public class SignUpDto {
     private String firstName;

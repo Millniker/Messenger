@@ -7,6 +7,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 @NoArgsConstructor
+@AllArgsConstructor
 @Getter
 @Setter
 @ToString
@@ -14,7 +15,7 @@ import java.util.UUID;
 @Table(name = "users")
 public class User {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID Id;
     @Column(name = "first_name")
     private String firstName;
