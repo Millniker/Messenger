@@ -1,6 +1,5 @@
 package com.user.controllers;
 
-import com.common.model.JwtUser;
 import com.common.service.JwtService;
 import com.user.entity.DTO.SignInDto;
 import com.user.entity.DTO.SignUpDto;
@@ -12,14 +11,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
 @RequiredArgsConstructor
-@RequestMapping("/users")
+@RequestMapping("api/users")
 public class UsersController {
     private final UserService userService;
     private final JwtService jwtService;
@@ -37,10 +35,8 @@ public class UsersController {
         return ResponseEntity.status(HttpStatus.OK).header(HttpHeaders.AUTHORIZATION,token).body(userMapper.toDto(user));
     }
     @GetMapping("/me")
-    public ResponseEntity<UserDto> getMe(@AuthenticationPrincipal JwtUser user){
-        UserDto user1 =userService.getMe(user);
-
-        return ResponseEntity.ok(user1);
+    public UserDto getMe(){
+        return userService.getMe();
     }
     @PostMapping
     public ResponseEntity<List<UserDto>> getUsers(@RequestParam int offset, @RequestParam int limit){

@@ -5,5 +5,14 @@ spring:
     url: jdbc:postgresql://localhost:5432/postgres
     username: postgres
     password: 79521831146
-  main:
-    web-application-type: reactive
+  cloud:
+    gateway:
+      routes:
+        - id: users
+          uri: http://localhost:8011/
+          predicates:
+            - Path=/users/**
+        - id: friends
+          uri: http://localhost:8010/
+          predicates:
+            - Path=/friends/**

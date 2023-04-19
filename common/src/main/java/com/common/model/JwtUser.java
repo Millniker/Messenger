@@ -9,6 +9,7 @@ import java.util.UUID;
 public class JwtUser implements Principal{
     private final UUID id;
     private final String login;
+    private final String name;
     @Override
     public String getName() {
         return login;

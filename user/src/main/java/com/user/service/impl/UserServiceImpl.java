@@ -12,7 +12,7 @@ import com.user.repository.UserRepository;
 import com.user.service.UserService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,7 +26,7 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class UserServiceImpl implements UserService {
-    private  UserRepository userRepository;
+    private final  UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
     private final UserMapper userMapper;
@@ -51,9 +51,10 @@ public class UserServiceImpl implements UserService {
         return user;
     }
     @Override
-    public UserDto getMe( JwtUser user){
-        User user1 = userRepository.findById(user.getId()).orElse(null);
-        return userMapper.toDto(user1);
+    public UserDto getMe(){
+        JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        User user = userRepository.findById(jwtUserData.getId()).orElse(null);
+        return userMapper.toDto(user);
     }
 
     public List<UserDto> getUsers(int offset, int limit){

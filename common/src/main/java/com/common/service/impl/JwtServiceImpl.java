@@ -1,7 +1,7 @@
 package com.common.service.impl;
 
 import com.common.model.JwtUser;
-import com.common.security.provider.JwtSettingsProvider;
+import com.common.security.props.SecurityProps;
 import com.common.service.JwtService;
 import com.sun.istack.NotNull;
 import io.jsonwebtoken.Claims;
@@ -23,25 +23,26 @@ import java.util.UUID;
 @Component
 @Service
 public class JwtServiceImpl implements JwtService {
-    private final JwtSettingsProvider jwtSettings;
+    private final SecurityProps jwtSettings;
     private final SecretKey secretKey;
     private final Clock clock;
-    public JwtServiceImpl(JwtSettingsProvider jwtSettings, Clock clock){
+    public JwtServiceImpl(SecurityProps jwtSettings, Clock clock){
         this.jwtSettings = jwtSettings;
         this.clock =clock;
-        secretKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtSettings.getSecret()));
+        secretKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtSettings.getJwtToken().getSecret()));
     }
     @Override
     public String generateToken(@NotNull JwtUser jwtUser){
         LocalDateTime now = LocalDateTime.now(clock);
-        Long expMin =jwtSettings.getExpirationMinutes();
-        Instant accessExpirationInstant = now.plusMinutes(jwtSettings.getExpirationMinutes()).atZone(ZoneId.systemDefault()).toInstant();
+        Long expMin =jwtSettings.getJwtToken().getExpiration();
+        Instant accessExpirationInstant = now.plusMinutes(jwtSettings.getJwtToken().getExpiration()).atZone(ZoneId.systemDefault()).toInstant();
         Date expiration= Date.from(accessExpirationInstant);
         return Jwts.builder()
                 .setSubject(jwtUser.getId().toString())
                 .setExpiration(expiration)
                 .signWith(secretKey)
                 .claim("username", jwtUser.getName())
+                .claim("login",jwtUser.getLogin())
                 .compact();
     }
     @Override
@@ -62,7 +63,8 @@ public class JwtServiceImpl implements JwtService {
         Claims claims = getClaims(token);
         return new JwtUser(
                 UUID.fromString(claims.getSubject()),
-                claims.get("username",String.class)
+                claims.get("username",String.class),
+                claims.get("login",String.class)
         );
     }
     public Claims getClaims(String token) {

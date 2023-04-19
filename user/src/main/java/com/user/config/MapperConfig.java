@@ -51,7 +51,8 @@ public class MapperConfig {
         @Override
         public JwtUser toJwtUser(User user) {
             return new JwtUser(user.getId(),
-                    user.getLogin());
+                    user.getLogin(),
+                    user.getFirstName());
         }
     };}
 
