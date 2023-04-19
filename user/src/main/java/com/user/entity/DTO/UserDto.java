@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @NoArgsConstructor
@@ -23,6 +24,6 @@ public class UserDto {
     private String number;
     private UUID avatar;
     private String city;
-    private LocalDate registrationDate;
+    private LocalDateTime registrationDate;
     private String login;
 }

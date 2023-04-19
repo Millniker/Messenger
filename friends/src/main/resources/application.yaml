@@ -1,8 +1,21 @@
 server:
   port: 8010
-
+  servlet:
+    context-path: /friends
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/postgres
+    url: jdbc:postgresql://localhost:5432/friends
     username: postgres
     password: 79521831146
+app:
+  security:
+    jwt-token:
+      permit-all:
+      - /api/users/register
+      - /api/users/login
+      root-path: /api
+      secret: ${JWT_SECRET:fdklvdlfvmkl3nl4jn3jnt433j53n5jn35j3jnnlfmr}
+      expiration: ${JWT_EXPIRATION:1221}
+    integrations:
+      root-path: /integration
+      api-key: ac816388c1c44ac2b2ae431f89c82e7e345d25a0e6474e75a78f9a5ce496060c

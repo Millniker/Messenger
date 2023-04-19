@@ -1,5 +1,6 @@
 package com.common.security;
 
+import com.common.exceptions.CommonException;
 import com.common.model.JwtUser;
 import com.common.security.exception.UnauthorizedException;
 import com.sun.istack.NotNull;
@@ -7,7 +8,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
@@ -38,10 +39,13 @@ class JwtTokenFilter extends OncePerRequestFilter {
     ) throws ServletException, IOException {
 
         var jwt = request.getHeader(HEADER_JWT);
+        if(jwt==null){
+            throw new UnauthorizedException();
+        }
         jwt = jwt.trim();
         jwt = jwt.substring("Bearer".length()+1);
         if(!validateToken(jwt)){
-            throw new BadCredentialsException("Invalid bearer authentication token");
+            throw CommonException.builder().message("Неправильный token").httpStatus(HttpStatus.UNAUTHORIZED).build();
         }
         // парсинг токена
         JwtUser jwtUser;
@@ -49,8 +53,8 @@ class JwtTokenFilter extends OncePerRequestFilter {
             jwtUser =parseUser(jwt);
         } catch (JwtException e) {
             // может случиться, если токен протух или некорректен
-            throw new UnauthorizedException();
-        }
+                throw CommonException.builder().message("Неправильный token").httpStatus(HttpStatus.UNAUTHORIZED).build();
+            }
 
         var authentication = new JwtAuthentication(jwtUser);
         SecurityContextHolder.getContext().setAuthentication(authentication);

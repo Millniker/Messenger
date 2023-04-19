@@ -1,19 +1,22 @@
 server:
   port: 8011
-  servlet:
-    context-path: /users
 spring:
+  flyway:
+    locations: classpath:db/migration
+    url: jdbc:postgresql://localhost:5432/users
+    user: postgres
+    password: 79521831146
   datasource:
-    url: jdbc:postgresql://localhost:5432/postgres
+    url: jdbc:postgresql://localhost:5432/users
     username: postgres
     password: 79521831146
 app:
   security:
     jwt-token:
       permit-all:
-        - /api/users/register # пример метода регистрации пользователя (нет в проекте)
-        - /api/users/login
-      root-path: /api
+        - /users/register
+        - /users/login
+      root-path: /users
       secret: ${JWT_SECRET:fdklvdlfvmkl3nl4jn3jnt433j53n5jn35j3jnnlfmr}
       expiration: ${JWT_EXPIRATION:1221}
     integrations:

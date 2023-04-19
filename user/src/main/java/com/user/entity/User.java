@@ -4,6 +4,7 @@ import lombok.*;
 
 import javax.persistence.*;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @NoArgsConstructor
@@ -33,7 +34,7 @@ public class User {
     private UUID avatar;
     private String city;
     @Column(name = "registration_date")
-    private LocalDate registrationDate;
+    private LocalDateTime registrationDate;
     @Column(unique = true, nullable = false)
     private String login;
 }
