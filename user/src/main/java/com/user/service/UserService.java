@@ -10,6 +10,6 @@ public interface UserService {
     UserDto updateUser(UserUpdateDto userUpdateDto);
     UserPageDto getUsers (SortsAndFiltersDto sortsAndFiltersDto);
     UserDto getUserByLogin(String login);
-
+    UserDto getUserByLoginForIntegration(String login);
 
     }

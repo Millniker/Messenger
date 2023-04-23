@@ -48,4 +48,5 @@ public class UsersController {
     public UserDto getUserByLogin(@PathVariable String login){
         return userService.getUserByLogin(login);
     }
+
 }

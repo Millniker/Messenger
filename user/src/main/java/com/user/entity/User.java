@@ -21,7 +21,6 @@ public class User {
     @Column(name = "first_name")
     private String firstName;
     @Column(name = "second_name")
-
     private String secondName;
     private String patronymic;
     @Column(name = "birth_date")

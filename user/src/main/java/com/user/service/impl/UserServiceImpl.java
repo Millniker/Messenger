@@ -1,6 +1,7 @@
 package com.user.service.impl;
 
 import com.common.model.JwtUser;
+import com.common.security.props.SecurityProps;
 import com.user.entity.DTO.*;
 import com.user.entity.User;
 import com.user.exceptions.CommonException;
@@ -12,19 +13,19 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
-import org.springframework.http.HttpStatus;
+import org.springframework.http.*;
+import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.RestTemplate;
 
 import javax.persistence.criteria.Predicate;
 import java.time.Clock;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -33,6 +34,12 @@ public class UserServiceImpl implements UserService {
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
     private final UserMapper userMapper;
+    private final SecurityProps securityProps;
+
+    /**
+
+     Регистрирует пользователя и возвращает токен и DTo пользователя
+     */
     @Transactional
     @Override
     public User register (SignUpDto signUpDto){
@@ -48,7 +55,14 @@ public class UserServiceImpl implements UserService {
         user.setRegistrationDate(LocalDateTime.now(clock));
         return userRepository.save(user);
     }
+
+    /**
+     * Осуществляет вход пользователя,
+     * принимает на вход login и password,
+     * возвращает токен и DTo пользователя
+     */
     @Override
+    @Transactional(readOnly = true)
     public User login (SignInDto signInDto){
         User user = userRepository.findByLogin(signInDto.getLogin());
 
@@ -60,12 +74,26 @@ public class UserServiceImpl implements UserService {
         }
         return user;
     }
+
+    /**
+     *
+     * Возвращает профиль авторизованного пользователя
+     */
     @Override
     public UserDto getMe(){
         JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         User user = userRepository.findById(jwtUserData.getId()).orElse(null);
+        if(user == null){
+            throw CommonException.builder().message("Пользователь не найден").httpStatus(HttpStatus.NOT_FOUND).build();
+        }
         return userMapper.toDto(user);
     }
+
+    /**
+     *
+     * Принимает на вход информацию о пагинации и фильтрах, сортировке,
+     * возвращает удовлетворяемых пользователей
+     */
     @Override
     public UserPageDto getUsers (SortsAndFiltersDto sortsAndFiltersDto) {
         Specification<User> filterSpec = createFilter(sortsAndFiltersDto.getFilters());
@@ -80,7 +108,12 @@ public class UserServiceImpl implements UserService {
         );
     }
 
+    /**
+     *
+     *Позволяет изменить профиль пользователя
+     */
     @Override
+    @Transactional
     public UserDto updateUser(UserUpdateDto userUpdateDto){
         JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         User user = userRepository.findById(jwtUserData.getId()).orElse(null);
@@ -99,9 +132,24 @@ public class UserServiceImpl implements UserService {
         if(user==null){
             throw CommonException.builder().message("Пользователь с таким login не найден").httpStatus(HttpStatus.NOT_FOUND).build();
         }
+        if(checkBan(user.getId())){
+            throw CommonException.builder().message("Пользователь добавил вас в черный список").httpStatus(HttpStatus.NOT_FOUND).build();
+        }
+        return userMapper.toDto(user);
+    }
+    @Override
+    public UserDto getUserByLoginForIntegration(String login){
+        User user = userRepository.findByLogin(login);
+        if(user==null){
+            throw CommonException.builder().message("Пользователь с таким login не найден").httpStatus(HttpStatus.NOT_FOUND).build();
+        }
         return userMapper.toDto(user);
     }
 
+    /**
+     *
+     * Парсит Map с фильтрами для дальнейшего поиска по фильтрам
+     */
     private Specification<User> createFilter(Map<String,String> filters){
         return (root, query, criteriaBuilder) -> {
             List<Predicate> predicates = new ArrayList<>();
@@ -109,7 +157,8 @@ public class UserServiceImpl implements UserService {
                 String filterField = filter.getKey();
                 String filterValue = filter.getValue();
                 if(Arrays.stream(User.class.getDeclaredFields()).anyMatch(field -> field.getName().equals(filterField))){
-                    Predicate predicate = criteriaBuilder.equal(root.get(filterField),filterValue);
+                    Predicate predicate = criteriaBuilder.like(criteriaBuilder.lower(root.get(filterField)),
+                            "%" + filterValue.toLowerCase() + "%");
                     predicates.add(predicate);
                 }
                 else {
@@ -119,6 +168,11 @@ public class UserServiceImpl implements UserService {
             return criteriaBuilder.and(predicates.toArray(new Predicate[0]));
         };
     }
+
+    /**
+     *
+     *Парсит Map с полями для сортировки для дальнейшей сортировки
+     */
     private Sort createSort (Map<String,String> sorts){
         List<Sort.Order> orders = new ArrayList<>();
         for(Map.Entry<String,String> sortParam :sorts.entrySet()){
@@ -133,13 +187,39 @@ public class UserServiceImpl implements UserService {
         }
             return Sort.by(orders);
     }
+
+    /**
+     *Отправляет интеграционный запрос на сервис Friend, чтобы узнать забанен ли пользователь
+     */
+    private Boolean checkBan (UUID id){
+
+        RestTemplate template = new RestTemplate(new HttpComponentsClientHttpRequestFactory());
+        JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.add("API_KEY", securityProps.getIntegrations().getApiKey());
+        headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
+        CheckBanDto body = new CheckBanDto(jwtUserData.getId(),id);
+        HttpEntity<CheckBanDto> entity = new HttpEntity<>(body, headers);
+        try {
+            ResponseEntity<Boolean> response = template.postForEntity(securityProps.getIntegrations().getUrl(),entity,Boolean.class );
+            return response.getBody();
+        }
+        catch (HttpClientErrorException e){
+                throw CommonException.builder().message(e.getMessage()).httpStatus(e.getStatusCode()).build();
+        }
+    }
+
+    /**
+     *
+     * Конвертирует User в UserDto
+     */
     private UserDto toDto(User user) {
         return new UserDto(user.getId(),
                 user.getFirstName(),
                 user.getSecondName(),
                 user.getPatronymic(),
                 user.getBirthDate(),
-                user.getPassword(),
                 user.getEmail(),
                 user.getNumber(),
                 user.getAvatar(),

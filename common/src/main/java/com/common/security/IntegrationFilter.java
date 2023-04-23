@@ -20,7 +20,6 @@ import static com.common.security.SecurityConst.HEADER_API_KEY;
  */
 @RequiredArgsConstructor
 class IntegrationFilter extends OncePerRequestFilter {
-
     private final String apiKey;
 
     @Override
@@ -34,6 +33,7 @@ class IntegrationFilter extends OncePerRequestFilter {
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             return;
         }
+
         SecurityContextHolder.getContext().setAuthentication(new IntegrationAuthentication());
         filterChain.doFilter(request, response);
     }

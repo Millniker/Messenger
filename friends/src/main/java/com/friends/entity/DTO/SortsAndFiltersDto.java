@@ -1,4 +1,4 @@
-package com.user.entity.DTO;
+package com.friends.entity.DTO;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -12,7 +12,7 @@ public class SortsAndFiltersDto {
     @NotBlank
     int page=0;
     @NotBlank
-    int size =10;
+    int size =1;
     @NotBlank
     private Map<String,String> filters;
     @NotBlank

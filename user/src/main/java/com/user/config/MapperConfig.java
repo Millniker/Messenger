@@ -21,7 +21,6 @@ public class MapperConfig {
                     user.getSecondName(),
                     user.getPatronymic(),
                     user.getBirthDate(),
-                    user.getPassword(),
                     user.getEmail(),
                     user.getNumber(),
                     user.getAvatar(),

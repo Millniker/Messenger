@@ -19,7 +19,6 @@ public class UserDto {
     private String secondName;
     private String patronymic;
     private LocalDate birthDate;
-    private String password;
     private String email;
     private String number;
     private UUID avatar;

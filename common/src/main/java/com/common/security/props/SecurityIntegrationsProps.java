@@ -17,5 +17,6 @@ public class SecurityIntegrationsProps {
     private String apiKey;
 
     private String rootPath;
+    private String url;
 
 }

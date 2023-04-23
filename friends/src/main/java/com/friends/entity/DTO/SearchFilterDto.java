@@ -1,20 +1,17 @@
-package com.user.entity.DTO;
+package com.friends.entity.DTO;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
 import javax.validation.constraints.NotBlank;
 import java.util.Map;
-
 @Data
 @AllArgsConstructor
-public class SortsAndFiltersDto {
+public class SearchFilterDto {
     @NotBlank
     int page=0;
     @NotBlank
-    int size =10;
+    int size =1;
     @NotBlank
     private Map<String,String> filters;
-    @NotBlank
-    private Map<String,String> sorts;
 }
