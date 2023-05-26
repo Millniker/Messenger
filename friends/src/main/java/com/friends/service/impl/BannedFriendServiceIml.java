@@ -1,7 +1,9 @@
 package com.friends.service.impl;
 
-import com.common.model.JwtUser;
+import com.common.model.CreateNotifyDTO;
+import com.common.model.NotifyType;
 import com.common.security.props.SecurityProps;
+import com.common.service.JwtService;
 import com.friends.entity.BannedFriend;
 import com.friends.entity.DTO.BannedFriendDto.AddBannedFriendsDto;
 import com.friends.entity.DTO.BannedFriendDto.BannedFriendDto;
@@ -16,23 +18,16 @@ import com.friends.mapper.FriendsMupper;
 import com.friends.repository.BannedFriendRepository;
 import com.friends.service.BannedFriendService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.RequestEntity;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import javax.persistence.criteria.Predicate;
-import java.net.URI;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -42,6 +37,9 @@ public class BannedFriendServiceIml implements BannedFriendService {
     private final FriendsMupper bannedFriendMapper;
     private final BannedFriendRepository bannedFriendRepository;
     private final SecurityProps securityProps;
+    private final StreamBridge streamBridge;
+    private final JwtService jwtService;
+
 
     /**
      *
@@ -51,8 +49,7 @@ public class BannedFriendServiceIml implements BannedFriendService {
     @Override
     @Transactional
     public void addBanFriend(AddBannedFriendsDto addBannedFriendsDto){
-        JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        BannedFriend oldFriend = bannedFriendRepository.findByMainIdAndAddedFriendId(jwtUserData.getId().toString(),addBannedFriendsDto.getAddedFriendId());
+        BannedFriend oldFriend = bannedFriendRepository.findByMainIdAndAddedFriendId(jwtService.getCurrentUserId().toString(),addBannedFriendsDto.getAddedFriendId());
         if(oldFriend!=null){
             if (oldFriend.getDeleteTime()!=null){
                 oldFriend.setDeleteTime(null);
@@ -64,8 +61,13 @@ public class BannedFriendServiceIml implements BannedFriendService {
         BannedFriend bannedFriend = bannedFriendMapper.toBanEntity(addBannedFriendsDto);
         bannedFriend.setAddTime(LocalDateTime.now());
         bannedFriend.setAddedFriendId(addBannedFriendsDto.getAddedFriendId());
-        bannedFriend.setMainId(jwtUserData.getId().toString());
+        bannedFriend.setMainId(jwtService.getCurrentUserId().toString());
         bannedFriend.setDeleted("false");
+        sendByStreamBridge(new CreateNotifyDTO(
+                UUID.fromString(bannedFriend.getAddedFriendId()),
+                NotifyType.RemoveFromFriends,
+                "Пользователь "+jwtService.getCurrentUserId()+"добавил вас в черный список"
+        ));
         bannedFriendRepository.save(bannedFriend);
     }
     /**
@@ -81,8 +83,18 @@ public class BannedFriendServiceIml implements BannedFriendService {
         }
         bannedFriend.setDeleteTime(LocalDateTime.now());
         bannedFriend.setDeleted("true");
+        sendByStreamBridge(new CreateNotifyDTO(
+                UUID.fromString(bannedFriend.getAddedFriendId()),
+                NotifyType.RemoveFromFriends,
+                "Пользователь"+bannedFriend.getMainId()+"удалил вас из черного списка"
+        ));
         bannedFriendRepository.save(bannedFriend);
     }
+
+    /**
+     *получение забаненого пользователя по id
+     */
+    @Transactional(readOnly = true)
     @Override
     public BannedFriendDto getUserById(UUID id){
         BannedFriend bannedFriend = bannedFriendRepository.findByAddedFriendId(id.toString());
@@ -91,12 +103,16 @@ public class BannedFriendServiceIml implements BannedFriendService {
         }
         return bannedFriendMapper.toBanDto(bannedFriend);
     }
+
+    /**
+     *получение всех забаненых пользователей с фильтрацией
+     */
+    @Transactional(readOnly = true)
     @Override
     public BannedFriendPageDto getBanFriends (SortsAndFiltersDto sortsAndFiltersDto) {
         Map<String,String> filters = sortsAndFiltersDto.getFilters();
         filters.put("deleted","false");
-        JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        filters.put("mainId",jwtUserData.getId().toString() );
+        filters.put("mainId",jwtService.getCurrentUserId().toString() );
         sortsAndFiltersDto.setFilters(filters);
         Specification<BannedFriend> filterSpec = createFilter(sortsAndFiltersDto.getFilters());
         Sort sort = createSort(sortsAndFiltersDto.getSorts());
@@ -105,6 +121,32 @@ public class BannedFriendServiceIml implements BannedFriendService {
         List<BannedFriendDtoForPage> bannedFriendDtoForPages= bannedFriends.getContent().stream().map(this::toDto).toList();
         return new BannedFriendPageDto(
                 sortsAndFiltersDto.getPage(),
+                bannedFriendDtoForPages.size(),
+                bannedFriendDtoForPages
+        );
+    }
+
+    /**
+     *
+     * поиск с фильтрами по забаненым пользователям
+     *
+     */
+    @Transactional(readOnly = true)
+    @Override
+    public BannedFriendPageDto findBanFriends(SearchFilterDto searchFilterDto){
+        if(searchFilterDto.getSize()==0){
+            throw CommonException.builder().message("Size должен быть больше 0").httpStatus(HttpStatus.BAD_REQUEST).build();
+        }
+        Map<String,String> filters = searchFilterDto.getFilters();
+        filters.put("deleted","false");
+        filters.put("mainId",jwtService.getCurrentUserId().toString() );
+        searchFilterDto.setFilters(filters);
+        Specification<BannedFriend> filterSpec = createFilter(searchFilterDto.getFilters());
+        PageRequest pageRequest = PageRequest.of(searchFilterDto.getPage(),searchFilterDto.getSize());
+        Page<BannedFriend> bannedFriendPage = bannedFriendRepository.findAll(filterSpec,pageRequest);
+        List<BannedFriendDtoForPage> bannedFriendDtoForPages= bannedFriendPage.getContent().stream().map(this::toDto).toList();
+        return new BannedFriendPageDto(
+                searchFilterDto.getPage(),
                 bannedFriendDtoForPages.size(),
                 bannedFriendDtoForPages
         );
@@ -141,52 +183,13 @@ public class BannedFriendServiceIml implements BannedFriendService {
         }
         return Sort.by(orders);
     }
-    public void patchBanUser (String login){
-        RestTemplate template = new RestTemplate(new HttpComponentsClientHttpRequestFactory());
-        URI uri = UriComponentsBuilder.fromUriString(securityProps.getIntegrations().getUrl()).build(login);
-        RequestEntity<Void> requestEntity = RequestEntity.get(uri)
-                .header("API_KEY", securityProps.getIntegrations().getApiKey())
-                .build();
-        try {
-            ResponseEntity<Friend>  response = template.exchange(requestEntity, Friend.class );
-            Friend body = response.getBody();
-            List<BannedFriend> bannedFriends = bannedFriendRepository.findAllByAddedFriendId(body.getId().toString());
-            for (BannedFriend bannedFriend: bannedFriends) {
-                bannedFriend.setFirstName(body.getFirstName());
-                bannedFriend.setSecondName(body.getSecondName());
-                bannedFriend.setPatronymic(body.getPatronymic());
-                bannedFriendRepository.save(bannedFriend);
-            }
-        }
-        catch (HttpClientErrorException e){
-            throw CommonException.builder().message(e.getMessage()).httpStatus(e.getStatusCode()).build();
-        }
-    }
-    @Override
-    public BannedFriendPageDto findBanFriends(SearchFilterDto searchFilterDto){
-        Map<String,String> filters = searchFilterDto.getFilters();
-        filters.put("deleted","false");
-        JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        filters.put("mainId",jwtUserData.getId().toString() );
-        searchFilterDto.setFilters(filters);
-        Specification<BannedFriend> filterSpec = createFilter(searchFilterDto.getFilters());
-        PageRequest pageRequest = PageRequest.of(searchFilterDto.getPage(),searchFilterDto.getSize());
-        Page<BannedFriend> bannedFriendPage = bannedFriendRepository.findAll(filterSpec,pageRequest);
-        List<BannedFriendDtoForPage> bannedFriendDtoForPages= bannedFriendPage.getContent().stream().map(this::toDto).toList();
-        return new BannedFriendPageDto(
-                searchFilterDto.getPage(),
-                bannedFriendDtoForPages.size(),
-                bannedFriendDtoForPages
-        );
-    }
+
     public Boolean isBanned(CheckBanDto checkBanDto){
         BannedFriend bannedFriend = bannedFriendRepository.findByMainIdAndAddedFriendId(checkBanDto.getMainId().toString(),checkBanDto.getAddId().toString());
         if(bannedFriend!=null){
-            if(Objects.equals(bannedFriend.getDeleted(), "true")){
-                return false;
-            }
+            return !Objects.equals(bannedFriend.getDeleted(), "true");
         }
-        return true;
+        return false;
     }
     public BannedFriendDtoForPage toDto(BannedFriend bannedFriend) {
         return new BannedFriendDtoForPage(
@@ -198,6 +201,9 @@ public class BannedFriendServiceIml implements BannedFriendService {
                 bannedFriend.getSecondName(),
                 bannedFriend.getPatronymic()
         );
+    }
+    private void sendByStreamBridge(CreateNotifyDTO notifyDTO) {
+        streamBridge.send("NewNotify-out-0", notifyDTO);
     }
 }
 

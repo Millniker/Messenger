@@ -1,0 +1,9 @@
+package com.chat.repository;
+
+import com.chat.entity.Attachment;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.UUID;
+
+public interface AttachmentRepository extends JpaRepository<Attachment, UUID> {
+}

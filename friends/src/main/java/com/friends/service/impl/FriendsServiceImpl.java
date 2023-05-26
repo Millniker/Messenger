@@ -1,7 +1,11 @@
 package com.friends.service.impl;
 
-import com.common.model.JwtUser;
+import com.common.model.CreateNotifyDTO;
+import com.common.model.NotifyType;
 import com.common.security.props.SecurityProps;
+import com.common.service.JwtService;
+import com.friends.entity.DTO.CheckBanDto;
+import com.friends.entity.DTO.CheckFriendDto;
 import com.friends.entity.DTO.FriendDto.AddFriendDto;
 import com.friends.entity.DTO.FriendDto.FriendDto;
 import com.friends.entity.DTO.FriendDto.FriendDtoForPage;
@@ -12,34 +16,38 @@ import com.friends.entity.Friend;
 import com.friends.exceptions.CommonException;
 import com.friends.mapper.FriendsMupper;
 import com.friends.repository.FriendRepository;
+import com.friends.service.BannedFriendService;
 import com.friends.service.FriendsService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.RequestEntity;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.util.UriComponentsBuilder;
 
 import javax.persistence.criteria.Predicate;
-import java.net.URI;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.*;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class FriendsServiceImpl implements FriendsService {
     private final FriendsMupper friendsMupper;
     private final FriendRepository friendRepository;
     private final SecurityProps securityProps;
+    private final BannedFriendService bannedFriendService;
+    private final StreamBridge streamBridge;
+    private final JwtService jwtService;
+
+
+    private final Clock clock;
+
     /**
      *
      * Принимает поля Id друга, Фио и добавляет его в друзья
@@ -47,8 +55,13 @@ public class FriendsServiceImpl implements FriendsService {
     @Override
     @Transactional
     public void addFriends(AddFriendDto addFriendDto){
-        JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        Friend oldFriend = friendRepository.findByMainIdAndAddedFriendId(jwtUserData.getId().toString(),addFriendDto.getAddedFriendId());
+        Friend oldFriend = friendRepository.findByMainIdAndAddedFriendId(jwtService.getCurrentUserId().toString(),addFriendDto.getAddedFriendId());
+        if(Objects.equals(addFriendDto.getAddedFriendId(), jwtService.getCurrentUserId().toString())){
+            throw CommonException.builder().message("Вы не можете добавить самого себя в друзья").httpStatus(HttpStatus.BAD_REQUEST).build();
+        }
+        if(bannedFriendService.isBanned(new CheckBanDto(jwtService.getCurrentUserId(),UUID.fromString(addFriendDto.getAddedFriendId())))){
+            throw CommonException.builder().message("Пользователь добавил вас в черный список").httpStatus(HttpStatus.BAD_REQUEST).build();
+        }
         if(oldFriend!=null){
             if (oldFriend.getDeleteTime()!=null){
                 oldFriend.setDeleteTime(null);
@@ -58,11 +71,21 @@ public class FriendsServiceImpl implements FriendsService {
             }
         }
         Friend friend = friendsMupper.toEntity(addFriendDto);
-        friend.setAddTime(LocalDateTime.now());
+        friend.setAddTime(LocalDateTime.now(clock));
         friend.setAddedFriendId(addFriendDto.getAddedFriendId());
-        friend.setMainId(jwtUserData.getId().toString());
+        friend.setMainId(jwtService.getCurrentUserId().toString());
         friend.setDeleted("false");
+        Friend addedfriend= friendsMupper.toEntity(addFriendDto);
+        addedfriend.setAddTime(LocalDateTime.now(clock));
+        addedfriend.setMainId(addFriendDto.getAddedFriendId());
+        addedfriend.setAddedFriendId(jwtService.getCurrentUserId().toString());
+        sendByStreamBridge(new CreateNotifyDTO(
+                UUID.fromString(addFriendDto.getAddedFriendId()),
+                NotifyType.NewFriend,
+                "Пользователь "+jwtService.getCurrentUserId()+" добавил вас в друзья"
+        ));
         friendRepository.save(friend);
+        friendRepository.save(addedfriend);
     }
 
     /**
@@ -72,12 +95,24 @@ public class FriendsServiceImpl implements FriendsService {
     @Override
     @Transactional
     public void deleteFriend(UUID id){
-        Friend friend = friendRepository.findByAddedFriendId(id.toString());
+        Friend friend = friendRepository.findByMainIdAndAddedFriendId(jwtService.getCurrentUserId().toString(),id.toString());
+        Friend addedFriend = friendRepository.findByAddedFriendIdAndMainId(jwtService.getCurrentUserId().toString(),id.toString());
         if(friend==null){
             throw CommonException.builder().message("Пользователь не найден").httpStatus(HttpStatus.NOT_FOUND).build();
         }
-        friend.setDeleteTime(LocalDateTime.now());
+        if(addedFriend==null){
+            throw CommonException.builder().message("Пользователь не является вашим другом").httpStatus(HttpStatus.BAD_REQUEST).build();
+        }
+        friend.setDeleteTime(LocalDateTime.now(clock));
         friend.setDeleted("true");
+        addedFriend.setDeleteTime(LocalDateTime.now(clock));
+        addedFriend.setDeleted("true");
+        sendByStreamBridge(new CreateNotifyDTO(
+                UUID.fromString(friend.getAddedFriendId()),
+                NotifyType.NewFriend,
+                "Пользователь"+friend.getMainId()+"добавил вас в друзья"
+        ));
+        friendRepository.save(addedFriend);
         friendRepository.save(friend);
     }
     @Override
@@ -92,8 +127,7 @@ public class FriendsServiceImpl implements FriendsService {
     public FriendPageDto getFriends (SortsAndFiltersDto sortsAndFiltersDto) {
         Map<String,String> filters = sortsAndFiltersDto.getFilters();
         filters.put("deleted","false");
-        JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        filters.put("mainId",jwtUserData.getId().toString() );
+        filters.put("mainId",jwtService.getCurrentUserId().toString() );
         sortsAndFiltersDto.setFilters(filters);
         Specification<Friend> filterSpec = createFilter(sortsAndFiltersDto.getFilters());
         Sort sort = createSort(sortsAndFiltersDto.getSorts());
@@ -138,33 +172,19 @@ public class FriendsServiceImpl implements FriendsService {
         }
         return Sort.by(orders);
     }
-    public void patchUser (String login){
-        RestTemplate template = new RestTemplate(new HttpComponentsClientHttpRequestFactory());
-        URI uri = UriComponentsBuilder.fromUriString(securityProps.getIntegrations().getUrl()).build(login);
-        RequestEntity<Void> requestEntity = RequestEntity.get(uri)
-                .header("API_KEY", securityProps.getIntegrations().getApiKey())
-                .build();
-        try {
-            ResponseEntity<Friend>  response = template.exchange(requestEntity, Friend.class );
-            Friend body = response.getBody();
-            List<Friend> friends = friendRepository.findAllByAddedFriendId(body.getId().toString());
-            for (Friend friend: friends) {
-                friend.setFirstName(body.getFirstName());
-                friend.setSecondName(body.getSecondName());
-                friend.setPatronymic(body.getPatronymic());
-                friendRepository.save(friend);
-        }
-        }
-        catch (HttpClientErrorException e){
-            throw CommonException.builder().message(e.getMessage()).httpStatus(e.getStatusCode()).build();
-        }
+    @Override
+    public Boolean isFriend(CheckFriendDto checkFriendDto) {
+        return friendRepository.existsByMainIdAndAddedFriendId(checkFriendDto.getMainId().toString(), checkFriendDto.getUserId().toString());
     }
+
     @Override
     public FriendPageDto findFriends(SearchFilterDto searchFilterDto){
+        if(searchFilterDto.getSize()==0){
+            throw CommonException.builder().message("Size должен быть больше 0").httpStatus(HttpStatus.BAD_REQUEST).build();
+        }
         Map<String,String> filters = searchFilterDto.getFilters();
         filters.put("deleted","false");
-        JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        filters.put("mainId",jwtUserData.getId().toString() );
+        filters.put("mainId",jwtService.getCurrentUserId().toString() );
         searchFilterDto.setFilters(filters);
         Specification<Friend> filterSpec = createFilter(searchFilterDto.getFilters());
         PageRequest pageRequest = PageRequest.of(searchFilterDto.getPage(),searchFilterDto.getSize());
@@ -186,5 +206,8 @@ public class FriendsServiceImpl implements FriendsService {
                 friend.getSecondName(),
                 friend.getPatronymic()
         );
+    }
+    private void sendByStreamBridge(CreateNotifyDTO notifyDTO) {
+        streamBridge.send("NewNotify-out-0", notifyDTO);
     }
 }

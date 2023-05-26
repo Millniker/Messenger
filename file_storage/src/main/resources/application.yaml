@@ -1,0 +1,27 @@
+minio:
+  access-key: ESQh99HBvWEQjrtU
+  secret-key: WiTx8uWdYyMqIHHxNDWUgHVnDY2cRYef
+  bucket: messanger
+  url: http://localhost:9900
+
+server:
+  port: 8014
+spring:
+  servlet:
+    multipart:
+      max-file-size: 10MB
+
+
+app:
+  security:
+    jwt-token:
+      permit-all:
+        - /users/register
+        - /users/login
+      root-path: /users
+      secret: ${JWT_SECRET:fdklvdlfvmkl3nl4jn3jnt433j53n5jn35j3jnnlfmr}
+      expiration: ${JWT_EXPIRATION:1221}
+    integrations:
+      root-path: /integration
+      api-key: ac816388c1c44ac2b2ae431f89c82e7e345d25a0e6474e75a78f9a5ce496060c
+      url: http://localhost:8014/fle/upload, http://localhost:8014/fle/download/{id}

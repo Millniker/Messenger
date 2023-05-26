@@ -10,11 +10,11 @@ import java.util.Map;
 @AllArgsConstructor
 public class SortsAndFiltersDto {
     @NotBlank
-    int page=0;
+    public int page=0;
     @NotBlank
-    int size =10;
+    public int size =10;
     @NotBlank
-    private Map<String,String> filters;
+    public Map<String,String> filters;
     @NotBlank
-    private Map<String,String> sorts;
+    public Map<String,String> sorts;
 }

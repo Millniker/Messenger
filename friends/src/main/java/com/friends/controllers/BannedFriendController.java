@@ -39,11 +39,6 @@ public class BannedFriendController {
     public ResponseEntity<BannedFriendPageDto> searchFriend(@RequestBody SearchFilterDto searchFilterDto){
         return ResponseEntity.ok(bannedFriendService.findBanFriends(searchFilterDto));
     }
-    @PatchMapping("/patch/{login}")
-    public ResponseEntity<Void> patchUser(@PathVariable String login){
-        bannedFriendService.patchBanUser(login);
-        return ResponseEntity.ok().build();
-    }
 
 
 }

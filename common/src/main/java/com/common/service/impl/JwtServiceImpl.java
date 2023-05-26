@@ -9,6 +9,7 @@ import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
 import org.springframework.stereotype.Service;
 
@@ -72,6 +73,10 @@ public class JwtServiceImpl implements JwtService {
                 .setSigningKey(secretKey)
                 .parseClaimsJws(token)
                 .getBody();
+    }
+    public UUID getCurrentUserId(){
+        JwtUser jwtUserData = (JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        return jwtUserData.getId();
     }
 
 

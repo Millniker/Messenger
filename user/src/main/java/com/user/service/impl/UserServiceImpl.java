@@ -1,7 +1,10 @@
 package com.user.service.impl;
 
-import com.common.model.JwtUser;
+import com.common.model.CreateNotifyDTO;
+import com.common.model.NotifyType;
+import com.common.model.UpdateFIODto;
 import com.common.security.props.SecurityProps;
+import com.common.service.impl.JwtServiceImpl;
 import com.user.entity.DTO.*;
 import com.user.entity.User;
 import com.user.exceptions.CommonException;
@@ -9,13 +12,14 @@ import com.user.mapper.UserMapper;
 import com.user.repository.UserRepository;
 import com.user.service.UserService;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.*;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,15 +33,17 @@ import java.util.*;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class UserServiceImpl implements UserService {
     private final  UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
     private final Clock clock;
     private final UserMapper userMapper;
     private final SecurityProps securityProps;
+    private final StreamBridge streamBridge;
+    private final JwtServiceImpl jwtService;
 
     /**
-
      Регистрирует пользователя и возвращает токен и DTo пользователя
      */
     @Transactional
@@ -65,13 +71,18 @@ public class UserServiceImpl implements UserService {
     @Transactional(readOnly = true)
     public User login (SignInDto signInDto){
         User user = userRepository.findByLogin(signInDto.getLogin());
-
         if(user==null){
             throw CommonException.builder().message("Пользователя с таким login не существует").httpStatus(HttpStatus.UNAUTHORIZED).build();
         }
         if(!passwordEncoder.matches(signInDto.getPassword(),user.getPassword())){
             throw CommonException.builder().message("Неправильные данные для входа").httpStatus(HttpStatus.UNAUTHORIZED).build();
         }
+
+        sendByStreamBridge(new CreateNotifyDTO(
+                user.getId(),
+                NotifyType.LoggedIn,
+                "Выполнен вход в аккаунт"
+        ));
         return user;
     }
 
@@ -80,9 +91,9 @@ public class UserServiceImpl implements UserService {
      * Возвращает профиль авторизованного пользователя
      */
     @Override
+    @Transactional(readOnly = true)
     public UserDto getMe(){
-        JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        User user = userRepository.findById(jwtUserData.getId()).orElse(null);
+        User user = userRepository.findById(jwtService.getCurrentUserId()).orElse(null);
         if(user == null){
             throw CommonException.builder().message("Пользователь не найден").httpStatus(HttpStatus.NOT_FOUND).build();
         }
@@ -95,7 +106,11 @@ public class UserServiceImpl implements UserService {
      * возвращает удовлетворяемых пользователей
      */
     @Override
+    @Transactional(readOnly = true)
     public UserPageDto getUsers (SortsAndFiltersDto sortsAndFiltersDto) {
+        if(sortsAndFiltersDto.getSize()==0){
+            throw CommonException.builder().message("Size должен быть больше 0").httpStatus(HttpStatus.BAD_REQUEST).build();
+        }
         Specification<User> filterSpec = createFilter(sortsAndFiltersDto.getFilters());
         Sort sort = createSort(sortsAndFiltersDto.getSorts());
         PageRequest pageRequest = PageRequest.of(sortsAndFiltersDto.getPage(),sortsAndFiltersDto.getSize(),sort);
@@ -115,18 +130,27 @@ public class UserServiceImpl implements UserService {
     @Override
     @Transactional
     public UserDto updateUser(UserUpdateDto userUpdateDto){
-        JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
-        User user = userRepository.findById(jwtUserData.getId()).orElse(null);
+        User user = userRepository.findById(jwtService.getCurrentUserId()).orElse(null);
+        if(user ==null){
+            throw CommonException.builder().message("Пользователя не существует").httpStatus(HttpStatus.NOT_FOUND).build();
+        }
         user.setFirstName(userUpdateDto.getFirstName()!=null? userUpdateDto.getFirstName():user.getFirstName());
         user.setSecondName(userUpdateDto.getSecondName()!=null? userUpdateDto.getSecondName():user.getSecondName());
         user.setPatronymic(userUpdateDto.getPatronymic()!=null? userUpdateDto.getPatronymic():user.getPatronymic());
         user.setBirthDate(userUpdateDto.getBirthDate()!=null? userUpdateDto.getBirthDate():user.getBirthDate());
         user.setNumber(userUpdateDto.getNumber()!=null? userUpdateDto.getNumber():user.getNumber());
         user.setAvatar(userUpdateDto.getAvatar()!=null? userUpdateDto.getAvatar():user.getAvatar());
+        sendUpdateByStreamBridge(new UpdateFIODto(user.getId(),user.getFirstName(),user.getSecondName(),user.getPatronymic()));
         userRepository.save(user);
         return userMapper.toDto(user);
     }
+
+    /**
+     *
+     * метод для получения user по логину
+     */
     @Override
+    @Transactional(readOnly = true)
     public UserDto getUserByLogin(String login){
         User user = userRepository.findByLogin(login);
         if(user==null){
@@ -137,6 +161,11 @@ public class UserServiceImpl implements UserService {
         }
         return userMapper.toDto(user);
     }
+
+    /**
+     *
+     * метод для получения user другими сервисами по login
+     */
     @Override
     public UserDto getUserByLoginForIntegration(String login){
         User user = userRepository.findByLogin(login);
@@ -144,6 +173,32 @@ public class UserServiceImpl implements UserService {
             throw CommonException.builder().message("Пользователь с таким login не найден").httpStatus(HttpStatus.NOT_FOUND).build();
         }
         return userMapper.toDto(user);
+    }
+
+    /**
+     *
+     * получение ФИО юзера по id для других сервисов
+     */
+    @Override
+    public String getUserByIdForIntegration(String id) {
+        User user = userRepository.findById(UUID.fromString(id)).orElse(null);
+        if(user==null){
+            throw CommonException.builder().message("Пользователь с таким login не найден").httpStatus(HttpStatus.NOT_FOUND).build();
+        }
+        return user.getFirstName() + " "+user.getSecondName()+" "+user.getPatronymic();
+    }
+
+    /**
+     *
+     * получение аватара пользователя по id для других сервисов
+     */
+    @Override
+    public UUID getAvatarByIdForIntegration(String id) {
+        User user = userRepository.findById(UUID.fromString(id)).orElse(null);
+        if(user==null){
+            throw CommonException.builder().message("Пользователь с таким login не найден").httpStatus(HttpStatus.NOT_FOUND).build();
+        }
+        return user.getAvatar();
     }
 
     /**
@@ -192,17 +247,15 @@ public class UserServiceImpl implements UserService {
      *Отправляет интеграционный запрос на сервис Friend, чтобы узнать забанен ли пользователь
      */
     private Boolean checkBan (UUID id){
-
         RestTemplate template = new RestTemplate(new HttpComponentsClientHttpRequestFactory());
-        JwtUser jwtUserData =(JwtUser) SecurityContextHolder.getContext().getAuthentication().getPrincipal();
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.add("API_KEY", securityProps.getIntegrations().getApiKey());
         headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));
-        CheckBanDto body = new CheckBanDto(jwtUserData.getId(),id);
+        CheckBanDto body = new CheckBanDto(jwtService.getCurrentUserId(),id);
         HttpEntity<CheckBanDto> entity = new HttpEntity<>(body, headers);
         try {
-            ResponseEntity<Boolean> response = template.postForEntity(securityProps.getIntegrations().getUrl(),entity,Boolean.class );
+            ResponseEntity<Boolean> response = template.postForEntity(securityProps.getIntegrations().getUrl()[0],entity,Boolean.class );
             return response.getBody();
         }
         catch (HttpClientErrorException e){
@@ -226,6 +279,12 @@ public class UserServiceImpl implements UserService {
                 user.getCity(),
                 user.getRegistrationDate(),
                 user.getLogin());
+    }
+    private void sendByStreamBridge(CreateNotifyDTO notifyDTO) {
+        streamBridge.send("NewNotify-out-0", notifyDTO);
+    }
+    private void sendUpdateByStreamBridge(UpdateFIODto userUpdateDto) {
+        streamBridge.send("UpdateUser-out-0", userUpdateDto);
     }
 
 }

@@ -39,10 +39,5 @@ public class FriendsController {
     public ResponseEntity<FriendPageDto> searchFriend(@RequestBody SearchFilterDto searchFilterDto){
         return ResponseEntity.ok(friendsService.findFriends(searchFilterDto));
     }
-    @PatchMapping("/patch/{login}")
-    public ResponseEntity<Void> patchUser(@PathVariable String login){
-        friendsService.patchUser(login);
-        return ResponseEntity.ok().build();
-    }
 
 }

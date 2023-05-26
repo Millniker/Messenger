@@ -1,0 +1,37 @@
+server:
+  port: 8012
+spring:
+  flyway:
+    locations: classpath:db.migration
+    url: jdbc:postgresql://localhost:5432/chat
+    user: postgres
+    password: 79521831146
+  datasource:
+    url: jdbc:postgresql://localhost:5432/chat
+    username: postgres
+    password: 79521831146
+  jpa:
+    show-sql: true
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:rmq-user}
+    password: ${RABBITMQ_PASSWORD:rmq-pass}
+  cloud.stream.bindings:
+    NewNotify-out-0:
+      destination: ${app.id}_USER_EVENT_MODIFIED
+app:
+  name: Chat Service
+  id: ${MESSENGER_APP_ID:ivanov.ivan}
+  security:
+    jwt-token:
+      permit-all:
+        - /users/register
+        - /users/login
+      root-path: /chat
+      secret: ${JWT_SECRET:fdklvdlfvmkl3nl4jn3jnt433j53n5jn35j3jnnlfmr}
+      expiration: ${JWT_EXPIRATION:1221}
+    integrations:
+      root-path: /integration
+      api-key: ac816388c1c44ac2b2ae431f89c82e7e345d25a0e6474e75a78f9a5ce496060c
+      url: http://localhost:8011/integration/name/{id},http://localhost:8014/fle/upload, http://localhost:8014/fle/download/{id}, http://localhost:8010/integration/check,http://localhost:8010/integration/friend,http://localhost:8011/integration/login/{id}

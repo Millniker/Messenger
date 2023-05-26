@@ -10,8 +10,20 @@ spring:
     url: jdbc:postgresql://localhost:5432/users
     username: postgres
     password: 79521831146
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USER:rmq-user}
+    password: ${RABBITMQ_PASSWORD:rmq-pass}
+  cloud.stream.bindings:
+    NewNotify-out-0:
+      destination: ${app.id}_USER_EVENT_MODIFIED
+    UpdateUser-out-0:
+      destination: ${app.id}_USER_UPDATE
 
 app:
+  name: User Service
+  id: ${MESSENGER_APP_ID:ivanov.ivan}
   security:
     jwt-token:
       permit-all:

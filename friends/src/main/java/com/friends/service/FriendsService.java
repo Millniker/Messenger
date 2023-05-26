@@ -1,5 +1,6 @@
 package com.friends.service;
 
+import com.friends.entity.DTO.CheckFriendDto;
 import com.friends.entity.DTO.FriendDto.AddFriendDto;
 import com.friends.entity.DTO.FriendDto.FriendDto;
 import com.friends.entity.DTO.FriendDto.FriendPageDto;
@@ -14,6 +15,6 @@ public interface FriendsService {
     FriendDto getUserById(UUID id);
     void deleteFriend(UUID id);
     void addFriends(AddFriendDto addFriendDto);
-    void patchUser (String login);
+    Boolean isFriend(CheckFriendDto checkFriendDto);
 
 }

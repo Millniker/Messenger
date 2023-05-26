@@ -15,6 +15,5 @@ public interface BannedFriendService {
     BannedFriendDto getUserById(UUID id);
     void deleteBanFriend(UUID id);
     void addBanFriend(AddBannedFriendsDto addBannedFriendsDto);
-    void patchBanUser (String login);
     Boolean isBanned(CheckBanDto checkBanDto);
 }
